@@ -1,0 +1,46 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-manager
+  namespace: kafka-d3
+  labels:
+    app: kafka-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-manager
+  template:
+    metadata:
+      labels:
+        app: kafka-manager
+    spec:
+      containers:
+      - name: kafka-manager
+        image: kafkamanager/kafka-manager
+        ports:
+        - name: kafka-manager
+          containerPort: 9000
+        env:
+        - name: ZK_HOSTS
+          value: "zookeeper:2181"
+        - name: KAFKA_MANAGER_AUTH_ENABLED
+          value: "false"
+        - name: APPLICATION_SECRET
+          value: bitnami
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kafka-manager
+  name: kafka-manager
+  namespace: kafka-d3
+spec:
+  ports:
+  - name: kafka-manager
+    port: 9000
+  selector:
+    app: kafka-manager
+  type: ClusterIP

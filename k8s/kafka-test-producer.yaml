@@ -1,0 +1,78 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: producer-script
+  namespace: kafka-d3
+data:
+  init.sh: |-
+    #!/bin/sh
+    pip install kafka-python
+    python3 /producer/producer.py
+
+  producer.py: |-
+    #!/usr/local/bin/python3
+    from time import sleep
+    from json import dumps
+    from kafka import KafkaProducer
+
+    interval = 1
+    print("Starting producer with %i as interval" % interval)
+    producer = KafkaProducer(bootstrap_servers=["kafka:9092"], value_serializer=lambda x: dumps(x).encode("utf-8"))
+
+    e = 0             
+    while True:
+        e += 1
+        data = {"data" : e}
+        print("Produced")
+        print(data)
+        producer.send("test", value=data)
+        sleep(interval)
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-test-producer
+  namespace: kafka-d3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: kafka-test-producer
+  template:
+    metadata:
+      labels:
+        task: kafka-d3
+        k8s-app: kafka-test-producer
+    spec:
+      volumes:
+        - name: init-script-volume
+          configMap:
+            name: producer-script
+            items:
+            - key: init.sh
+              path: init.sh
+            defaultMode: 0744
+        - name: producer-script-volume
+          configMap:
+            name: producer-script
+            items:
+            - key: producer.py
+              path: producer.py
+            defaultMode: 0744
+      containers:
+      - name: python3
+        ports:
+        - containerPort: 80
+        image: python:3-alpine
+        env:
+          - name: PYTHONUNBUFFERED
+            value: "1"
+        command: 
+          - /init/init.sh
+        volumeMounts:
+        - name: init-script-volume
+          mountPath: /init
+        - name: producer-script-volume
+          mountPath: /producer
