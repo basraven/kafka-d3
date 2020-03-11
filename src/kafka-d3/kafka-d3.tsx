@@ -183,7 +183,7 @@ const ticked = function(this: any) {
         //     return "translate(" + fixna(d.x) + "," + fixna(d.y) + ")";
         // });
     }
-    if(this.state  != undefined){
+    if(this.state != undefined){
 
       
       if(this.state.message){
@@ -346,7 +346,9 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
         d3.event.sourceEvent.stopPropagation();
         // TODO: Fix variable alfa target here
         // FIXME: not sure if this now still works
-        if (!d3.event.active){  this.target.alphaTarget(0.3).restart() };
+        // if (!d3.event.active){ 
+        //   this.target.alphaTarget(0.3).restart()
+        // };
         d.fx = d.x;
         d.fy = d.y;
     }
@@ -357,7 +359,9 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
     }
 
     function dragended(this: any, d) {
-        if (!d3.event.active) this.alphaTarget(0);
+        // if (!d3.event.active) {
+        //   this.alphaTarget(0);
+        // }
         d.fx = null;
         d.fy = null;
     }
@@ -425,10 +429,12 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
           this.state.messageLayout.on('tick', ticked.bind(this))
           this.setState({
             messageLayout : this.state.messageLayout
+          }, () => {
+            this.handleDrag();
           })
-      })
-    });
-    
+        })
+      });
+      
     console.log(setSvgObjects)
 
     // this.state.svg.call(
@@ -437,7 +443,6 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
     //   .on("zoom", () => { this.state.container.attr("transform", d3.event.transform); })
     // );
 
-    // this.handleDrag();
 
 
     // this.refresh();
