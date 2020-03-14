@@ -41,6 +41,44 @@ type GraphOps = {
 //   messageLayout : messageLayout.on('tick', function(){})
 // });
 
+
+
+const setLayouts = ({ labels, messages, nodeLayout, topics, producers, topicLinks, message, topic, producer, topicLink, labelMessage, labelTopic, labelProducer}, {messageRepel, messageTargetAttraction, width, height}) => ({
+  messagelabelLayout: d3.forceSimulation(labels.messages)
+  .force("charge", d3.forceManyBody()
+      .strength(-50)),
+    
+  topiclabelLayout: d3.forceSimulation(labels.topics)
+    .force("charge", d3.forceManyBody()
+    .strength(-5000)),
+  
+  producerlabelLayout: d3.forceSimulation(labels.producers)
+    .force("charge", d3.forceManyBody()
+    .strength(-50)),
+
+  messageLayout: d3.forceSimulation(messages)
+    .force("charge", d3.forceManyBody()
+    .strength(messageRepel)),
+    
+  nodeLayout: d3.forceSimulation([...topics, ...producers])
+    .force("charge", d3.forceManyBody()
+      .strength(-3000))
+    .force("center", d3.forceCenter(width / 2, height/ 2))
+    .force("x", d3.forceX(() => { return width / 2} )
+      .strength(0.1))
+    .force("y", d3.forceY(width / 2)
+      .strength(0.1))
+    .force("link", d3.forceLink(topicLinks).id( d => {return d.id; })
+      .distance(300)
+      .strength(1)),
+  
+  svg: d3.select("#viz")
+    .attr("width", width)
+    .attr("height", height),
+  
+  container : d3.select("#viz").append("g")
+});
+
 const setSvgObjects = ({ container, messages, topics, producers, topicLinks }, {color}) => ({
   message: container.append("g").attr("class", "messages")
       .selectAll("g")
@@ -66,6 +104,7 @@ const setSvgObjects = ({ container, messages, topics, producers, topicLinks }, {
       .attr("r", 12)
       .attr("fill", (d) => { return color(4); }),
 
+
     // Remove me
     // topicLink: container.append("g").attr("class", "topicLinks")
     //     .selectAll("line")
@@ -74,97 +113,66 @@ const setSvgObjects = ({ container, messages, topics, producers, topicLinks }, {
     //     .append("line")
 });
 
-
-
-
-
-const setLayouts = ({ labels, messages, nodeLayout, topics, producers, topicLinks, message, topic, producer, topicLink, labelMessage, labelTopic, labelProducer}, {messageRepel, messageTargetAttraction, width, height}) => ({
-     
-    messagelabelLayout: d3.forceSimulation(labels.messages)
-    .force("charge", d3.forceManyBody()
-      .strength(-50)),
+const setTargetedForceLayout = ({ nodeLayout, messageLayout }, {width, height, messageTargetAttraction}) => ({
+  messageLayout: messageLayout
+    .force("x", d3.forceX().x(function(this: any, d) {
+        let { width, nodeLayout } = this;
+        let nodes = nodeLayout.nodes(),
+            defaultTarget = width / 2;
+        if(!nodes || nodes.length == 0){
+          return defaultTarget
+        }
+        // TODO: make pretty
+        let target = nodes.find(element => element.id == d.target)
+        if(target){
+          return target.x
+        }else{
+          return defaultTarget
+        }
+      }.bind({
+        width: width,
+        nodeLayout : nodeLayout
+      })
+    )
+      .strength(messageTargetAttraction)
+    )
+    .force("y", d3.forceY().y(function(this: any, d){
+      let { height, nodeLayout } = this;
+      let nodes = nodeLayout.nodes(),
+          defaultTarget = height / 2;
+      if(!nodes || nodes.length == 0){
+        return defaultTarget
+      }
+      // TODO: make pretty
+      let target = nodes.find(element => element.id == d.target)
+      if(target){
+        return target.y
+      }
+      else{
+        return defaultTarget
+      }
+    }.bind({
+        height: height,
+        nodeLayout : nodeLayout
+      })
+    ) 
+      .strength(messageTargetAttraction)
+    )
     
-    topiclabelLayout: d3.forceSimulation(labels.topics)
-    .force("charge", d3.forceManyBody()
-      .strength(-5000)),
-    
-    producerlabelLayout: d3.forceSimulation(labels.producers)
-    .force("charge", d3.forceManyBody()
-      .strength(-50)),
-    
-    messageLayout: d3.forceSimulation(messages)
-    .force("charge", d3.forceManyBody()
-      .strength(messageRepel)),
-    // .force("x", d3.forceX().x(d => {
-    //       let nodes = nodeLayout.nodes()
-    //       let targetNode = nodes.find(element => element.id == d.target);
-    //       d.targetX = targetNode.x 
-    //       if(!targetNode.x){ console.log(d.targetX) }
-    //       return d.targetX
-    //   })
-      // .strength(messageTargetAttraction))
-    // .force("y", d3.forceY().y(d => {
-    //     let nodes = nodeLayout.nodes()
-    //     let targetNode = nodes.find(element => element.id == d.target);
-    //     d.targetY = targetNode.y
-    //     return d.targetY
-    // })
-      // .strength(messageTargetAttraction))
-    // .on("tick", 
-    
-    
-    
-    
-    
-    
-    // ),
-      
-    nodeLayout: d3.forceSimulation([...topics, ...producers])
-    .force("charge", d3.forceManyBody()
-      .strength(-3000))
-    .force("center", d3.forceCenter(width / 2, height/ 2))
-    .force("x", d3.forceX(() => { return width / 2} )
-      .strength(0.1))
-    .force("y", d3.forceY(width / 2)
-      .strength(0.1))
-    .force("link", d3.forceLink(topicLinks).id( d => {return d.id; })
-      .distance(300)
-      .strength(1)),
-    // .on("tick", ticked.bind('bla')
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    // ),
-
-    svg: d3.select("#viz")
-      .attr("width", width)
-      .attr("height", height),
-    container : d3.select("#viz").append("g")
 });
+
 
 const ticked = function(this: any) {
   function fixna(x) {
-      if (isFinite(x)) return x;
+    if (isFinite(x)) return x;
       return 0;
     }
     
     function updateLink(link) {
       link.attr("x1", function(d) { return fixna(d.source.x); })
-          .attr("y1", function(d) { return fixna(d.source.y); })
-          .attr("x2", function(d) { return fixna(d.target.x); })
-          .attr("y2", function(d) { return fixna(d.target.y); });
+      .attr("y1", function(d) { return fixna(d.source.y); })
+      .attr("x2", function(d) { return fixna(d.target.x); })
+      .attr("y2", function(d) { return fixna(d.target.y); });
     }
   
     function updateNode(node) {
@@ -248,21 +256,7 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
       endNodeRemoveDist: 30,
       messageTargetAttraction: 0.7,
       messageRepel: -60
-
   };
-
-  
-  
-  
-
-  // The tick function sets the current state. TypeScript will let us know
-  // which ones we are allowed to set.
-  // TODO: remove
-  tick() {
-    this.setState({
-      time: new Date()
-    });
-  }
 
   initState(){
     this.setState({
@@ -274,14 +268,12 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
       },
       topics: [],
       producers: [],
-      // FIXME: default state should be located somewhere else, but this also works
       messages: []
     });
   }
 
   // Before the component mounts, we initialise our state
   componentWillMount() {
-    this.tick();
     this.initState();
   }
 
@@ -341,27 +333,26 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
   }
 
   handleDrag(){
-        
-    function dragstarted(this: any, d) {
+
+    function dragstarted(this: any, d: any) {
         d3.event.sourceEvent.stopPropagation();
         // TODO: Fix variable alfa target here
-        // FIXME: not sure if this now still works
-        // if (!d3.event.active){ 
-        //   this.target.alphaTarget(0.3).restart()
-        // };
+        if (!d3.event.active){ 
+          this.alphaTarget(0.3).restart()
+        };
         d.fx = d.x;
         d.fy = d.y;
     }
     
-    function dragged(d) {
+    function dragged(this: any, d) {
         d.fx = d3.event.x;
         d.fy = d3.event.y;
     }
 
     function dragended(this: any, d) {
-        // if (!d3.event.active) {
-        //   this.alphaTarget(0);
-        // }
+        if (!d3.event.active) {
+          this.alphaTarget(0);
+        }
         d.fx = null;
         d.fy = null;
     }
@@ -420,17 +411,27 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
         "source" : "producer A",
         "target" : "topic A"
       })
+      this.state.topics.push({
+        "id": "topic B",
+        "group": 1,
+        "size" : 10,
+      })
       
     })()
 
-
+    // FIXME: this is just plain ugly nesting, please fix me
     this.setState(setLayouts, () =>{
         this.setState(setSvgObjects, () => {
-          this.state.messageLayout.on('tick', ticked.bind(this))
-          this.setState({
-            messageLayout : this.state.messageLayout
-          }, () => {
-            this.handleDrag();
+          this.setState(setTargetedForceLayout, () => {
+            // TODO: dump in separate function which e.g. returns promise
+            this.state.messageLayout.on('tick', ticked.bind(this))
+            this.state.nodeLayout.on('tick', ticked.bind(this))
+            this.setState({
+              messageLayout : this.state.messageLayout,
+              nodeLayout : this.state.nodeLayout
+            }, () => {
+              this.handleDrag();
+            })
           })
         })
       });
