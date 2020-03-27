@@ -1,15 +1,16 @@
 import React, { Component } from 'react'; // let's also import Component
 import  * as d3 from 'd3';
 
+
 type GraphState = {
   time: Date,
   topics: Array<any>,
-  producers: Array<any>,
+  consumers: Array<any>,
   messages: Array<any>,
-  labels: any,
+  // labels: any,
   messagelabelLayout: any,
   topiclabelLayout: any,
-  producerlabelLayout: any,
+  consumerlabelLayout: any,
   messageLayout: any,
   nodeLayout: any,
   topicLinks: Array<any>,
@@ -17,321 +18,535 @@ type GraphState = {
   container: any,
   message: any,
   topic: any,
-  producer: any,
+  consumer: any,
   topicLink: any,
   labelMessage: any,
   labelTopic: any,
-  labelProducer: any,
+  labelConsumer: any,
 }
 
 type GraphOps = {
   width: number
   height: number,
   color: any,
-  refreshSpeed: number,
+  defaultScale: number,
   endNodeRemoveDist: number,
   messageTargetAttraction: number,
   messageRepel: number;
+  nodeCharge: number;
+  messageDepartureTickDelay: number;
+  messageRemoveDist: number;
 }
 
 
+function fixna(x) {
+  if (isFinite(x)) return x;  
+    return 0;
+  }  
 
 
-// const setTicked = ({messageLayout  }, {}) => ({
-//   messageLayout : messageLayout.on('tick', function(){})
-// });
-
-
-
-const setLayouts = ({ labels, messages, nodeLayout, topics, producers, topicLinks, message, topic, producer, topicLink, labelMessage, labelTopic, labelProducer}, {messageRepel, messageTargetAttraction, width, height}) => ({
-  messagelabelLayout: d3.forceSimulation(labels.messages)
-  .force("charge", d3.forceManyBody()
-      .strength(-50)),
+const updateLayouts = ({ messages, nodeLayout, topics, consumers, topicLinks, message, topic, consumer, topicLink, labelMessage, labelTopic, labelConsumer}, {messageRepel, nodeCharge, width, height}) => ({
+  messagelabelLayout: d3.forceSimulation(
+    messages.map(message => {
+      return { "message" : message }
+    })
+  )
+    .force("charge", d3.forceManyBody()
+    .strength(-50)),
     
-  topiclabelLayout: d3.forceSimulation(labels.topics)
+  topiclabelLayout: d3.forceSimulation(
+      topics.map(topic => {
+        return { "topic" : topic }
+      })
+    )
     .force("charge", d3.forceManyBody()
     .strength(-5000)),
   
-  producerlabelLayout: d3.forceSimulation(labels.producers)
+  consumerlabelLayout: d3.forceSimulation(
+    consumers.map(consumer => {
+      return { "consumer" : consumer }
+    })
+  )
     .force("charge", d3.forceManyBody()
     .strength(-50)),
 
   messageLayout: d3.forceSimulation(messages)
+    .alphaMin(0.0001)
     .force("charge", d3.forceManyBody()
     .strength(messageRepel)),
     
-  nodeLayout: d3.forceSimulation([...topics, ...producers])
+  nodeLayout: d3.forceSimulation([...topics, ...consumers])
+    .alphaMin(0.01) // Reduces jitter, but makes less fluent animation
     .force("charge", d3.forceManyBody()
-      .strength(-3000))
+      .strength(nodeCharge))
     .force("center", d3.forceCenter(width / 2, height/ 2))
     .force("x", d3.forceX(() => { return width / 2} )
-      .strength(0.1))
+      .strength(0.01))
     .force("y", d3.forceY(width / 2)
-      .strength(0.1))
+      .strength(0.01))
     .force("link", d3.forceLink(topicLinks).id( d => {return d.id; })
       .distance(300)
-      .strength(1)),
+      .strength(1))
+});
+
+const updateSvgObjects = ({ message, topic, consumer, labelMessage, labelTopic, labelConsumer, container, messages, topics, consumers, topicLinks }, {height, width, color, messageRepel, messageDepartureTickDelay}) => ({
+  message: message
+      .data(messages)
+      // .remove()
+      .enter()
+      .append("circle")
+      .attr("r", 3)
+      .attr("name", (message) => message.id )
+
+      .attr("x", function(this: any, message, index, messages) {
+          // Set starting position
+          let source = this.topics.find(element => element.id == message.source)
+          if(source){
+            message.departureDelay = messageDepartureTickDelay
+            message.sourceX = source.x
+            return source.x
+          }else{
+            console.log("No target")
+            return width / 2
+        }
+          
+      }
+        .bind({
+          d3: d3,
+          messageDepartureTickDelay : messageDepartureTickDelay,
+          width: width,
+          topics: topics,
+        })
+      )
+        
+        .attr("y", function(this: any, message, index, messages) {
+          // Set starting position
+          let source = this.topics.find(element => element.id == message.source)
+          if(source){
+            message.departureDelay = messageDepartureTickDelay
+            message.sourceY = source.y
+            return source.y
+          }else{
+            console.log("No target")
+            return height / 2
+          }
+          
+        }
+          .bind({
+            messageDepartureTickDelay : messageDepartureTickDelay,
+            height: height,    
+            topics: topics,
+          })
+        )
+      .attr("fill", (d) => { return color(d.group); })
+      .merge(message),
+
+  topic: topic
+    .data(topics)
+    .enter()
+    .append("circle")
+    .attr("r", 5)
+    .attr("name", (topic) => topic.id )
+    .attr("fill", (d) => { return color(d.partition); })
+    .merge(topic),
+
+  consumer: consumer
+    .data(consumers)
+    .enter()
+    .append("circle")
+    .attr("r", 5)
+    .attr("name", (consumer) => consumer.id )
+    .attr("fill", (d) => { return color(4); })
+    .merge(consumer),
+
+  // Labels
+
+  // TODO: enable labels for message? Not sure about that
+  // labelMessage: labelMessage
+  //   .data(
+  //     messages.map(message => {
+  //       return { "message" : message }
+  //     })
+  //   )
+  //   .enter()
+  //   .append("text")
+  //   .text(function(d, i) { 
+  //     return  d.message.id;
+  //   })
+  //   .style("fill", "#555")
+  //   .style("font-family", "Arial")
+  //   .style("font-size", 12)
+  //   .style("pointer-events", "none")  // to prevent mouseover/drag capture
+  //   .merge(labelMessage),
   
+  labelTopic: labelTopic
+    .data(
+      topics.map(topic => {
+        return { "topic" : topic }
+      })
+    )
+    .enter()
+    .append("text")
+    .text(function(d, i) { 
+      return  d.topic.id;
+    })
+    .style("fill", "#555")
+    .style("font-family", "Arial")
+    .style("font-size", 12)
+    .style("pointer-events", "none")  // to prevent mouseover/drag capture
+    .merge(labelTopic),
+  
+  labelConsumer: labelConsumer
+    .data(
+      consumers.map(consumer => {
+        return { "consumer" : consumer }
+      })
+    )
+    .enter()
+    .append("text")
+    .text(function(d, i) { 
+      return  d.consumer.id;
+    })
+    .style("fill", "#555")
+    .style("font-family", "Arial")
+    .style("font-size", 12)
+    .style("pointer-events", "none")  // to prevent mouseover/drag capture
+    .merge(labelConsumer)
+
+});
+
+
+const initSvgContainer = ({messages, topics, consumers}, {defaultScale, width, height}) => ({
+  // TODO: Check if we can remove the .data() here
+  message: d3.select("#viz").append("g").attr("class", "messages").selectAll("g").data(messages),
+  topic: d3.select("#viz").append("g").attr("class", "topics").selectAll("g").data(topics),
+  consumer: d3.select("#viz").append("g").attr("class", "consumers").selectAll("g").data(consumers),
+  labelMessage : d3.select("#viz").append("g").attr("class", "labelMessage").selectAll("text").data(
+    messages.map(message => {
+      return { "message" : message }
+    })
+  )
+    .text(function(d, i) { 
+      return  d.message.id;
+    }
+  ),
+  labelTopic : d3.select("#viz").append("g").attr("class", "labelTopic").selectAll("text").data(
+    topics.map(topic => {
+      return { "topic" : topic }
+    })
+  )
+    .text(function(d, i) { 
+      return  d.topic.id;
+    }
+  ),
+  labelConsumer : d3.select("#viz").append("g").attr("class", "labelConsumer").selectAll("text").data(
+    consumers.map(consumer => {
+      return { "consumer" : consumer }
+    })
+  )
+    .text(function(d, i) { 
+      return  d.consumer.id;
+    }
+  ),
   svg: d3.select("#viz")
-    .attr("width", width)
-    .attr("height", height),
-  
+      // FIXME: zoom is not working properly in Grafana
+      .call(
+        d3.zoom()
+        .scaleExtent([0.5, 20])
+        .on("zoom", () => { d3.select("#viz").attr("transform", d3.event.transform); })
+      )
+      .attr("width", width).attr("height", height),
+      // .attr("transform", ("scale(" + defaultScale + ")") ),
   container : d3.select("#viz").append("g")
 });
 
-const setSvgObjects = ({ container, messages, topics, producers, topicLinks }, {color}) => ({
-  message: container.append("g").attr("class", "messages")
-      .selectAll("g")
-      .data(messages)
-      .enter()
-      .append("circle")
-      .attr("r", 5)
-      .attr("fill", (d) => { return color(d.group); }),
-
-    topic: container.append("g").attr("class", "topics")
-      .selectAll("g")
-      .data(topics)
-      .enter()
-      .append("circle")
-      .attr("r", 17)
-      .attr("fill", (d) => { return color(d.partition); }),
-
-    producer: container.append("g").attr("class", "producers")
-      .selectAll("g")
-      .data(producers)
-      .enter()
-      .append("circle")
-      .attr("r", 12)
-      .attr("fill", (d) => { return color(4); }),
 
 
-    // Remove me
-    // topicLink: container.append("g").attr("class", "topicLinks")
-    //     .selectAll("line")
-    //     .data(topicLinks)
-    //     .enter()
-    //     .append("line")
-});
+// const refreshLabels = ({topics, consumers, labels},{}) => ({
+//   //TODO: check if actually working, not really used right now
+//   labels: {
+//     topics : topics.map(topic => {
+//       return { "topic" : topic }
+//     }),
+//     consumer: consumers.map(consumer => {
+//       return { "consumer" : consumer }
+//     })
+//   }
+// });
 
-const setTargetedForceLayout = ({ nodeLayout, messageLayout }, {width, height, messageTargetAttraction}) => ({
-  messageLayout: messageLayout
-    .force("x", d3.forceX().x(function(this: any, d) {
-        let { width, nodeLayout } = this;
-        let nodes = nodeLayout.nodes(),
-            defaultTarget = width / 2;
-        if(!nodes || nodes.length == 0){
-          return defaultTarget
-        }
-        // TODO: make pretty
-        let target = nodes.find(element => element.id == d.target)
+// const updateMessageLinks = ({ consumers, messageLayout }, {width, height, messageTargetAttraction}) => ({
+//   totalLayout: messageLayout
+//   .force("link", d3.forceLink([
+//     {
+//       source: "topic A",
+//       target: "consumer A",
+//       index : 1
+//     }
+//   ]).id( d => {
+//     console.log(d)
+//     return d.id; 
+//   }).distance(300).strength(1))
+// })
+
+const updateTargetPosition = ({ messages, consumers, messageLayout, nodeLayout}, {messageRemoveDist, width, height, messageTargetAttraction}) => ({
+      messageLayout: messageLayout
+
+    .force("x", d3.forceX().x((message)=>{
+      if(message.departureDelay == 1){
+        let target = consumers.find(el => el.id == message.target)
         if(target){
           return target.x
-        }else{
-          return defaultTarget
         }
-      }.bind({
-        width: width,
-        nodeLayout : nodeLayout
-      })
-    )
-      .strength(messageTargetAttraction)
-    )
-    .force("y", d3.forceY().y(function(this: any, d){
-      let { height, nodeLayout } = this;
-      let nodes = nodeLayout.nodes(),
-          defaultTarget = height / 2;
-      if(!nodes || nodes.length == 0){
-        return defaultTarget
       }
-      // TODO: make pretty
-      let target = nodes.find(element => element.id == d.target)
-      if(target){
-        return target.y
-      }
-      else{
-        return defaultTarget
-      }
-    }.bind({
-        height: height,
-        nodeLayout : nodeLayout
-      })
-    ) 
-      .strength(messageTargetAttraction)
-    )
-    
-});
+      return message.x
+    }
+      // function(this: any, message, index, messages) {
+      //   if(message.departureDelay == 1){
+      //     let consumers = this.consumers;
+      //     let target = consumers.find(el => el.id == message.target)
 
+      //     console.log(message.target, target)
+      //     if(target){
+      //       return target.x
+      //     }
+      //   }
+      // }.bind({
+      //   width: width,
+      //   messageLayout: messageLayout,
+      //   consumers: consumers,
+      // })  
+      )  
+      .strength(1)
+      ) 
+      .force("y", d3.forceY().y((message) => {
+        if(message.departureDelay == 1){
+          let target = consumers.find(el => el.id == message.target)
+          if(target){
+            return target.y
+          }
+        }
+        return message.y
+      }
+        // function(this: any, message, index, messages){
+        // if(!message.departureDelay){
+        //   let target = this.consumers.find(element => element.id == message.target)
+        //   if(target){
+        //     return target.y
+        //   }  
+        // }
+    //     // throw "dafaq"
+    //   }.bind({
+    //     height: height,
+    //     messageLayout: messageLayout,
+    //     consumers : consumers
+    //   })  
+    )   
+      .strength(1)
+    ),  
+    messages : messages.filter((message, index, messages) => {
+      // Remove arrived messages
+      let endNode = consumers.find(element => element.id == message.target);
+      let endNodeDistance = Math.sqrt( ( message.x - endNode.x ) * (message.x - endNode.x ) + ( message.y - endNode.y ) * ( message.y - endNode.y ) );
+      if(endNodeDistance > messageRemoveDist){
+          return true
+      }
+      return false
+    })
+    
+});    
+
+// const updateSourcePosition = ({ topics, messages}, { width, height, messageDepartureTickDelay}) => ({
+//       messages: messages.map((message)=> {
+//         if(!message.departureDelay){
+//           let source = topics.find(element => element.id == message.source)
+//           if(source){
+//             message.departureDelay = messageDepartureTickDelay
+//             message.sourceX = source.x
+//             message.sourceY = source.y
+//           }else{
+//             console.log("No target")
+//             message.sourceX = width / 2
+//             message.sourceY = height / 2
+//           }
+//         }
+//         return message
+//       })
+    
+// });    
 
 const ticked = function(this: any) {
-  function fixna(x) {
-    if (isFinite(x)) return x;
-      return 0;
-    }
-    
-    function updateLink(link) {
-      link.attr("x1", function(d) { return fixna(d.source.x); })
-      .attr("y1", function(d) { return fixna(d.source.y); })
-      .attr("x2", function(d) { return fixna(d.target.x); })
-      .attr("y2", function(d) { return fixna(d.target.y); });
-    }
+
+  function updateNode(node) {
+      node.attr("transform", function(this: any, node) {
+          return "translate(" + fixna(node.x) + "," + fixna(node.y) + ")";
+      });    
+  }    
   
-    function updateNode(node) {
-        node.attr("transform", function(d) {
-            return "translate(" + fixna(d.x) + "," + fixna(d.y) + ")";
-        });
-    }
+  function updateMessage(message) {
+    
+      // TODO: update to another function
+      message.attr("transform", function(this: any, message) {
+          // TODO: relocate departure delay behavior, but working properly, Sets initial X and Y based on attribute
+          if(message.sourceX){
+            message.x = message.sourceX;
+          }
+          if(message.sourceY){
+            message.y = message.sourceY;
+          }
+          if(message.departureDelay !== undefined){
+            // console.log(message.departureDelay)
+          }else{
+            // console.log(message.departureDelay)
+          }
+          if(message.departureDelay){
+            if(message.departureDelay == 1){ // concurrency fix?
+              // delete message.departureDelay
+              
+              if(message.sourceX){
+                delete message.sourceX;
+              }
+              if(message.sourceY){
+                delete message.sourceY
+              }
+            }else{
+              message.departureDelay = message.departureDelay - 1;
+            }
+          }
+
+          return "translate(" + fixna(message.x) + "," + fixna(message.y) + ")";
+      });    
+  }    
+
+  if(this.state != undefined){
+
+    if(this.state.message){
+      this.state.message.call(updateMessage);
+      this.setState(updateSvgObjects, ()=>{
+        this.setState(updateTargetPosition)
+      })     
+    }  
+
+    if(this.state.topic){
+      this.state.topic.call(updateNode);
+    }  
+    
+    if(this.state.consumer){
+      this.state.consumer.call(updateNode);
+    }  
+    
+    // if(this.state.topicLink){
+    //   this.state.topicLink.call(updateLink);
+    // }  
+  
+  
+    // this.state.messagelabelLayout.alphaTarget(0.3).restart();
+    // this.state.topiclabelLayout.alphaTarget(0.5).restart();
+    // this.state.consumerlabelLayout.alphaTarget(0.1).restart();
+  
   
     
-    function updateNodeTarget(node) {
-    //     .force("x", d3.forceX().x(function(d) {
-    //     return width / 5
-    //     }).strength(1)
-    //   )
-        // node.attr("transform", function(d) {
-        //     return "translate(" + fixna(d.x) + "," + fixna(d.y) + ")";
-        // });
-    }
-    if(this.state != undefined){
+    if(this.state.labelMessage){
+      this.state.labelMessage.each(function(d, i) {
+        d.x = d.message.x + 10;
+        d.y = d.message.y;
+      });  
+      this.state.labelMessage.call(updateNode);
+    }  
+    
+    if(this.state.labelTopic){
+      this.state.labelTopic.each(function(this: any, d, i) {
+              d.x = d.topic.x + 10;
+              d.y = d.topic.y;
+                     
 
-      
-      if(this.state.message){
-        this.state.message.call(updateNode);
-        this.state.message.call(updateNodeTarget);
-      }
+          // TODO: Do something instead of the +10 above
+          // var b = this.getBBox();
 
-      if(this.state.topic){
-        this.state.topic.call(updateNode);
-      }
-      
-      if(this.state.producer){
-        this.state.producer.call(updateNode);
-      }
-      
-      if(this.state.topicLink){
-        this.state.topicLink.call(updateLink);
-      }
-    
-    
-      // messagelabelLayout.alphaTarget(0.3).restart();
-      // topiclabelLayout.alphaTarget(0.5).restart();
-      // producerlabelLayout.alphaTarget(0.1).restart();
-    
-    
-      
-      if(this.state.labelMessage){
-        this.state.labelMessage.each(function(d, i) {
-          d.x = d.message.x;
-          d.y = d.message.y;
-        });
-        this.state.labelMessage.call(updateNode);
-      }
-      
-      if(this.state.labelTopic){
-        this.state.labelTopic.each(function(d, i) {
-                d.x = d.topic.x;
-                d.y = d.topic.y;
-        });
-        this.state.labelTopic.call(updateNode);
-      }
+          // var diffX = d.x - d.node.x;
+          // var diffY = d.y - d.node.y;
 
-      if(this.state.labelProducer){
-        this.state.labelProducer.each(function(d, i) {
-                d.x = d.producer.x;
-                d.y = d.producer.y;
-        });
-        this.state.labelProducer.call(updateNode);
-      }
-    }
+          // var dist = Math.sqrt(diffX * diffX + diffY * diffY);
+
+          // var shiftX = b.width * (diffX - dist) / (dist * 2);
+          // shiftX = Math.max(-b.width, Math.min(0, shiftX));
+          // var shiftY = 16;
+          // this.setAttribute("transform", "translate(" + shiftX + "," + shiftY + ")");
+      });        
+      this.state.labelTopic.call(updateNode);
+    }  
+
+    if(this.state.labelConsumer){
+      this.state.labelConsumer.each(function(d, i) {
+              d.x = d.consumer.x + 10;
+              d.y = d.consumer.y;
+      });        
+      this.state.labelConsumer.call(updateNode);
+    }  
+  }  
    
   }
+
 
 export class KafkaD3 extends Component<GraphOps, GraphState> {
 
   public static defaultProps = {
       width: 800,
       height: 1000,
+      defaultScale: 0.25,
       color: d3.scaleOrdinal(d3.schemeCategory10),
       topicLinks: [],
-      refreshSpeed: 300,
       endNodeRemoveDist: 30,
-      messageTargetAttraction: 0.7,
-      messageRepel: -60
+      messageTargetAttraction: 0.5,
+      messageRepel: -5,
+      nodeCharge: -10,
+      messageDepartureTickDelay: 1000,
+      messageRemoveDist: 100
   };
 
-  initState(){
-    this.setState({
-      labels : {
-        'messages': [],
-        'topics' : [],
-        'partitions' : [],
-        'producers': []
-      },
-      topics: [],
-      producers: [],
-      messages: []
-    });
+  public defaultState = {
+    // labels : {
+    //   'messages': [],
+    //   'topics' : [],
+    //   'partitions' : [],
+    //   'consumers': []
+    // },
+    topics: [],
+    consumers: [],
+    messages: []
+  };
+  
+  initDrawing(this: any){
+    this.setState(this.defaultState)
   }
 
   // Before the component mounts, we initialise our state
-  componentWillMount() {
-    this.initState();
+  componentWillMount(this: any) {
+    this.initDrawing()
   }
 
-  refreshLabels(){
-    //TODO: check if actually working, not really used right now
-    this.state.topics.forEach((d, i) => {
-      this.state.labels.topics.push({topic: d})
-      this.setState({
-        'labels' : this.state.labels.topics
-      })
-    });
-    this.state.producers.forEach((d, i) => {
-      this.state.labels.producers.push({producer: d})
-      this.setState({
-        'labels' : this.state.labels.producers
-      })  
-    });
+  refresh(callback: any){
+    // TODO: remove ugly nesting
+    this.setState(updateSvgObjects,
+      () => {
+        this.setState(updateLayouts,
+          () => {
+            this.state.messageLayout.on('tick', ticked.bind(this))
+            // this.state.nodeLayout.on('tick', ticked.bind(this))
+            this.setState({
+              messageLayout : this.state.messageLayout,
+              nodeLayout : this.state.nodeLayout
+            },
+            () => {
+              // this.setState(updateTargetPosition, () => {
+                this.handleDrag()
+                callback()
+              // })
+            })
+          });
+      });
   }
 
   
-
-  oldsetSvgObjects(){
-    // TODO: Do in a single call
-    // this.setState({
-    //   container: this.state.svg.append("g"),
-    //   message: this.state.container.append("g").attr("class", "messages")
-    //     .selectAll("g")
-    //     .data(this.state.messages)
-    //     .enter()
-    //     .append("circle")
-    //     .attr("r", 5)
-    //     .attr("fill", (d) => { return this.props.color(d.group); }),
-
-    //   topic: this.state.container.append("g").attr("class", "topics")
-    //     .selectAll("g")
-    //     .data(this.state.topics)
-    //     .enter()
-    //     .append("circle")
-    //     .attr("r", 17)
-    //     .attr("fill", (d) => { return this.props.color(d.partition); }),
-
-    //   producer: this.state.container.append("g").attr("class", "producers")
-    //     .selectAll("g")
-    //     .data(this.state.producers)
-    //     .enter()
-    //     .append("circle")
-    //     .attr("r", 12)
-    //     .attr("fill", (d) => { return this.props.color(4); }),
-
-    //   // Remove me
-    //   topicLink: this.state.container.append("g").attr("class", "topicLinks")
-    //       .selectAll("line")
-    //       .data(this.state.topicLinks)
-    //       .enter()
-    //       .append("line")
-    // })
-  }
-
   handleDrag(){
 
     function dragstarted(this: any, d: any) {
@@ -369,110 +584,146 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
             .on("start", dragstarted.bind(this.state.nodeLayout))
             .on("drag", dragged.bind(this.state.nodeLayout))
             .on("end", dragended.bind(this.state.nodeLayout))
-    );
-
-    this.state.producer.call(
-        d3.drag()
-            .on("start", dragstarted.bind(this.state.nodeLayout))
-            .on("drag", dragged.bind(this.state.nodeLayout))
-            .on("end", dragended.bind(this.state.nodeLayout))
-    );
-
-  }
-
- 
-  refresh(){
-
-  }
-
-
+            );
+            
+    this.state.consumer.call(
+      d3.drag()
+      .on("start", dragstarted.bind(this.state.nodeLayout))
+      .on("drag", dragged.bind(this.state.nodeLayout))
+      .on("end", dragended.bind(this.state.nodeLayout))
+      );
+      
+    }
+            
+            
+            
   // After the component did mount, we set the state each second.
-  componentDidMount() {
-  
-    ( () => {
-      this.state.messages.push({
-        "id": ("Generated " + Math.random()),
-        "group": 1,
-        "size" : 10,
-        "source" : "producer A",
-        "target" : "topic A"
-      })
-      this.state.messages.push({
-        "id": ("Generated " + Math.random()),
-        "group": 1,
-        "size" : 10,
-        "source" : "producer A",
-        "target" : "topic A"
-      })
-      this.state.messages.push({
-        "id": ("Generated " + Math.random()),
-        "group": 1,
-        "size" : 10,
-        "source" : "producer A",
-        "target" : "topic A"
-      })
-      this.state.topics.push({
-        "id": "topic B",
-        "group": 1,
-        "size" : 10,
-      })
-      
-    })()
-
-    // FIXME: this is just plain ugly nesting, please fix me
-    this.setState(setLayouts, () =>{
-        this.setState(setSvgObjects, () => {
-          this.setState(setTargetedForceLayout, () => {
-            // TODO: dump in separate function which e.g. returns promise
-            this.state.messageLayout.on('tick', ticked.bind(this))
-            this.state.nodeLayout.on('tick', ticked.bind(this))
-            this.setState({
-              messageLayout : this.state.messageLayout,
-              nodeLayout : this.state.nodeLayout
-            }, () => {
-              this.handleDrag();
-            })
-          })
+  componentDidMount(this: any) {
+        console.log("didmount")
+        
+        this.state.consumers.push({
+          "id": "consumer A",
+          "group": 1,
+          "size" : 10,
         })
-      });
-      
-    console.log(setSvgObjects)
+        this.state.topics.push({
+          "id": "topic A",
+          "group": 1,
+          "size" : 10,
+        })
+        this.state.consumers.push({
+          "id": "consumer B",
+          "group": 1,
+          "size" : 10,
+        })
+        this.state.topics.push({
+          "id": "topic B",
+          "group": 1,
+          "size" : 10,
+        })
+        this.state.consumers.push({
+          "id": "consumer C",
+          "group": 1,
+          "size" : 10,
+        })
+        this.state.topics.push({
+          "id": "topic C",
+          "group": 1,
+          "size" : 10,
+        })
 
-    // this.state.svg.call(
-    //   d3.zoom()
-    //   .scaleExtent([.1, 400])
-    //   .on("zoom", () => { this.state.container.attr("transform", d3.event.transform); })
-    // );
+        // this.setState(refreshLabels)
+        // this.state.messages.push({
+        //   "id": ("Generated " + Math.random()),
+        //   "group": 1,
+        //   "size" : 10,
+        //   "source" : "topic A",
+        //   "target" : "consumer C"
+        // })
+        // this.state.messages.push({
+        //   "id": ("Generated " + Math.random()),
+        //   "group": 1,
+        //   "size" : 10,
+        //   "source" : "topic C",
+        //   "target" : "consumer B"
+        // })
+        // this.state.messages.push({
+        //   "id": ("Generated " + Math.random()),
+        //   "group": 1,
+        //   "size" : 10,
+        //   "source" : "topic C",
+        //   "target" : "consumer A"
+        // })
+        
+        //TODO: solve ugly nesting
+        this.setState(
+          initSvgContainer,
+          () => {
+            // TODO:  callback can be nicer
+            this.refresh(
+              function(this: any){
+                
 
 
+                
+                this.state.messages.push({
+                  "id": ("Generated " + Math.random()),
+                  "group": 1,
+                  "size" : 10,
+                  "source" : "topic A",
+                  "target" : "consumer A"
+                })
+                setInterval(() => {
+                  this.state.messages.push({
+                    "id": ("Generated " + Math.random()),
+                    "group": 1,
+                    "size" : 10,
+                    "source" : "topic A",
+                    "target" : "consumer C"
+                  })
+                  this.state.messages.push({
+                    "id": ("Generated " + Math.random()),
+                    "group": 1,
+                    "size" : 10,
+                    "source" : "topic C",
+                    "target" : "consumer B"
+                  })
+                  this.state.messages.push({
+                    "id": ("Generated " + Math.random()),
+                    "group": 1,
+                    "size" : 10,
+                    "source" : "topic C",
+                    "target" : "consumer A"
+                  })
+                  this.state.messages.push({
+                    "id": ("Generated " + Math.random()),
+                    "group": 1,
+                    "size" : 10,
+                    "source" : "topic A",
+                    "target" : "consumer A"
+                  })
 
-    // this.refresh();
 
-    setInterval(() => {
-      this.state.messages.push({
-        "id": ("Generated " + Math.random()),
-        "group": 1,
-        "size" : 10,
-        "source" : "producer A",
-        "target" : "topic A"
-      })
-      this.setState({
-        messages: this.state.messages
-      })
-    }, 1000);
-
-
+                  
   
+                  this.setState({
+                    messages: this.state.messages
+                  },
+                  () => {
+                      this.refresh(()=>{
+                        console.log('second refresh')
+                      })
+                  })              
+
+                }, 3000);             
+                
+            }.bind(this))
+          }
+        )     
   }
   // render will know everything!
   render() {
-  return <p><svg id='viz'></svg>
-            {/* <p>
-              iets hier {JSON.stringify(this.state.messages)}
-            </p>
-             The current time is {this.state.time.toLocaleTimeString()}
-              */}
-             </p>
+  return <svg id='viz'></svg>
   }
 }
 
