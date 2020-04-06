@@ -13,7 +13,6 @@ type GraphState = {
   consumerlabelLayout: any,
   messageLayout: any,
   nodeLayout: any,
-  topicLinks: Array<any>,
   svg: any,
   container: any,
   message: any,
@@ -34,7 +33,7 @@ type GraphOps = {
   messageTargetAttraction: number,
   messageRepel: number;
   nodeCharge: number;
-  messageDepartureTickDelay: number;
+  departureDelay: number;
   messageRemoveDist: number;
 }
 
@@ -45,7 +44,7 @@ function fixna(x) {
   }  
 
 
-const updateLayouts = ({ messages, nodeLayout, topics, consumers, topicLinks, message, topic, consumer, topicLink, labelMessage, labelTopic, labelConsumer}, {messageRepel, nodeCharge, width, height}) => ({
+const updateLayouts = ({ messages, nodeLayout, topics, consumers, message, topic, consumer, topicLink, labelMessage, labelTopic, labelConsumer}, {messageRepel, nodeCharge, width, height}) => ({
   messagelabelLayout: d3.forceSimulation(
     messages.map(message => {
       return { "message" : message }
@@ -76,20 +75,50 @@ const updateLayouts = ({ messages, nodeLayout, topics, consumers, topicLinks, me
     .strength(messageRepel)),
     
   nodeLayout: d3.forceSimulation([...topics, ...consumers])
-    .alphaMin(0.01) // Reduces jitter, but makes less fluent animation
+    .alphaMin(0.05) // Reduces jitter, but makes less fluent animation
     .force("charge", d3.forceManyBody()
       .strength(nodeCharge))
-    .force("center", d3.forceCenter(width / 2, height/ 2))
-    .force("x", d3.forceX(() => { return width / 2} )
-      .strength(0.01))
-    .force("y", d3.forceY(width / 2)
-      .strength(0.01))
-    .force("link", d3.forceLink(topicLinks).id( d => {return d.id; })
-      .distance(300)
-      .strength(1))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force("x", d3.forceX(width / 2).strength(0.01))
+    .force("y", d3.forceY(height / 2).strength(0.01))
+    .force("link", d3.forceLink((() => { 
+      let links : Array<any> = [] ;
+      messages.forEach((item) => {
+        let existing = links.find( element => element.source == item.source && element.target == item.target ) ;
+        if(!existing){
+          links.push({
+            source : item.source,
+            target : item.target,
+            index : 1
+          })
+        }
+      })
+      return links
+    })()).id( d => {return d.id; })
+      .distance(30)
+      .strength(0.5))
 });
 
-const updateSvgObjects = ({ message, topic, consumer, labelMessage, labelTopic, labelConsumer, container, messages, topics, consumers, topicLinks }, {height, width, color, messageRepel, messageDepartureTickDelay}) => ({
+const updateSvgObjects = ({ message, topic, consumer, topicLink, labelMessage, labelTopic, labelConsumer, container, messages, topics, consumers }, {height, width, color, messageRepel, departureDelay}) => ({
+  
+  topic: topic
+  .data(topics)
+  .enter()
+  .append("circle")
+  .attr("r", 5)
+  .attr("name", (topic) => topic.id )
+  .attr("fill", (d) => { return color(d.partition); })
+  .merge(topic),
+  
+  consumer: consumer
+  .data(consumers)
+  .enter()
+  .append("circle")
+  .attr("r", 5)
+  .attr("name", (consumer) => consumer.id )
+  .attr("fill", (d) => { return color(4); })
+  .merge(consumer),
+  
   message: message
       .data(messages)
       // .remove()
@@ -99,41 +128,28 @@ const updateSvgObjects = ({ message, topic, consumer, labelMessage, labelTopic, 
       .attr("name", (message) => message.id )
 
       .attr("x", function(this: any, message, index, messages) {
-          // Set starting position
-          let source = this.topics.find(element => element.id == message.source)
-          if(source){
-            message.departureDelay = messageDepartureTickDelay
-            message.sourceX = source.x
-            return source.x
-          }else{
-            console.log("No target")
-            return width / 2
-        }
+          // Set starting position on tick 1
+          message = setSourceIfAvailable(message, this.topics)
+          message.departureDelay = departureDelay  
+          return message.x
           
       }
         .bind({
           d3: d3,
-          messageDepartureTickDelay : messageDepartureTickDelay,
+          departureDelay : departureDelay,
           width: width,
           topics: topics,
         })
       )
         
         .attr("y", function(this: any, message, index, messages) {
-          // Set starting position
-          let source = this.topics.find(element => element.id == message.source)
-          if(source){
-            message.departureDelay = messageDepartureTickDelay
-            message.sourceY = source.y
-            return source.y
-          }else{
-            console.log("No target")
-            return height / 2
-          }
-          
+          // Set starting position on tick 1
+          message = setSourceIfAvailable(message, this.topics)
+          message.departureDelay = departureDelay  
+          return message.y
         }
           .bind({
-            messageDepartureTickDelay : messageDepartureTickDelay,
+            departureDelay : departureDelay,
             height: height,    
             topics: topics,
           })
@@ -141,36 +157,39 @@ const updateSvgObjects = ({ message, topic, consumer, labelMessage, labelTopic, 
       .attr("fill", (d) => { return color(d.group); })
       .merge(message),
 
-  topic: topic
-    .data(topics)
+  topicLink : topicLink
+  .data(( () => {
+    let links : Array<any> = [] ;
+    messages.forEach((item) => {
+      let existing = links.find( element => element.source == item.source && element.target == item.target ) ;
+      if(!existing){
+        links.push({
+          source : item.source,
+            target : item.target,
+            index : 1
+          })
+        }
+      })
+      return links
+    })())
     .enter()
-    .append("circle")
-    .attr("r", 5)
-    .attr("name", (topic) => topic.id )
-    .attr("fill", (d) => { return color(d.partition); })
-    .merge(topic),
-
-  consumer: consumer
-    .data(consumers)
-    .enter()
-    .append("circle")
-    .attr("r", 5)
-    .attr("name", (consumer) => consumer.id )
-    .attr("fill", (d) => { return color(4); })
-    .merge(consumer),
-
-  // Labels
-
-  // TODO: enable labels for message? Not sure about that
-  // labelMessage: labelMessage
-  //   .data(
-  //     messages.map(message => {
-  //       return { "message" : message }
-  //     })
-  //   )
-  //   .enter()
-  //   .append("text")
-  //   .text(function(d, i) { 
+    .append("line")
+    // .attr("stroke", "#fff")
+    // .attr("stroke-opacity", 0.1)
+    // .attr("stroke-width", "1px")
+    .merge(topicLink),
+    // Labels
+    
+    // TODO: enable labels for message? Not sure about that
+    // labelMessage: labelMessage
+    //   .data(
+      //     messages.map(message => {
+        //       return { "message" : message }
+        //     })
+        //   )
+        //   .enter()
+        //   .append("text")
+        //   .text(function(d, i) { 
   //     return  d.message.id;
   //   })
   //   .style("fill", "#555")
@@ -180,10 +199,10 @@ const updateSvgObjects = ({ message, topic, consumer, labelMessage, labelTopic, 
   //   .merge(labelMessage),
   
   labelTopic: labelTopic
-    .data(
-      topics.map(topic => {
-        return { "topic" : topic }
-      })
+  .data(
+    topics.map(topic => {
+      return { "topic" : topic }
+    })
     )
     .enter()
     .append("text")
@@ -195,20 +214,20 @@ const updateSvgObjects = ({ message, topic, consumer, labelMessage, labelTopic, 
     .style("font-size", 12)
     .style("pointer-events", "none")  // to prevent mouseover/drag capture
     .merge(labelTopic),
-  
-  labelConsumer: labelConsumer
+    
+    labelConsumer: labelConsumer
     .data(
       consumers.map(consumer => {
         return { "consumer" : consumer }
       })
-    )
-    .enter()
-    .append("text")
-    .text(function(d, i) { 
-      return  d.consumer.id;
-    })
-    .style("fill", "#555")
-    .style("font-family", "Arial")
+      )
+      .enter()
+      .append("text")
+      .text(function(d, i) { 
+        return  d.consumer.id;
+      })
+      .style("fill", "#555")
+      .style("font-family", "Arial")
     .style("font-size", 12)
     .style("pointer-events", "none")  // to prevent mouseover/drag capture
     .merge(labelConsumer)
@@ -216,11 +235,25 @@ const updateSvgObjects = ({ message, topic, consumer, labelMessage, labelTopic, 
 });
 
 
-const initSvgContainer = ({messages, topics, consumers}, {defaultScale, width, height}) => ({
+const initSvgContainer = ({messages, topics, consumers}, {width, height}) => ({
   // TODO: Check if we can remove the .data() here
   message: d3.select("#viz").append("g").attr("class", "messages").selectAll("g").data(messages),
   topic: d3.select("#viz").append("g").attr("class", "topics").selectAll("g").data(topics),
   consumer: d3.select("#viz").append("g").attr("class", "consumers").selectAll("g").data(consumers),
+  topicLink: d3.select("#viz").append("g").attr("class", "topicLinks").selectAll("line").data((()=>{
+    let links : Array<any> = [] ;
+    messages.forEach((item) => {
+      let existing = links.find( element => element.source == item.source && element.target == item.target ) ;
+      if(!existing){
+        links.push({
+          source : item.source,
+          target : item.target,
+          index : 1
+        })
+      }
+    })
+    return links
+  })()),
   labelMessage : d3.select("#viz").append("g").attr("class", "labelMessage").selectAll("text").data(
     messages.map(message => {
       return { "message" : message }
@@ -262,18 +295,6 @@ const initSvgContainer = ({messages, topics, consumers}, {defaultScale, width, h
 
 
 
-// const refreshLabels = ({topics, consumers, labels},{}) => ({
-//   //TODO: check if actually working, not really used right now
-//   labels: {
-//     topics : topics.map(topic => {
-//       return { "topic" : topic }
-//     }),
-//     consumer: consumers.map(consumer => {
-//       return { "consumer" : consumer }
-//     })
-//   }
-// });
-
 // const updateMessageLinks = ({ consumers, messageLayout }, {width, height, messageTargetAttraction}) => ({
 //   totalLayout: messageLayout
 //   .force("link", d3.forceLink([
@@ -288,79 +309,80 @@ const initSvgContainer = ({messages, topics, consumers}, {defaultScale, width, h
 //   }).distance(300).strength(1))
 // })
 
-const updateTargetPosition = ({ messages, consumers, messageLayout, nodeLayout}, {messageRemoveDist, width, height, messageTargetAttraction}) => ({
-      messageLayout: messageLayout
+// const updateTargetPosition = ({ messages, consumers, messageLayout, nodeLayout}, {messageRemoveDist, width, height, messageTargetAttraction}) => ({
+//       messageLayout: messageLayout
 
-    .force("x", d3.forceX().x((message)=>{
-      if(message.departureDelay == 1){
-        let target = consumers.find(el => el.id == message.target)
-        if(target){
-          return target.x
-        }
-      }
-      return message.x
-    }
-      // function(this: any, message, index, messages) {
-      //   if(message.departureDelay == 1){
-      //     let consumers = this.consumers;
-      //     let target = consumers.find(el => el.id == message.target)
+//     .force("x", d3.forceX().x((message)=>{
+//       if(message.departureDelay == 1){
+//         let target = consumers.find(el => el.id == message.target)
+//         if(target){
+//           return target.x
+//         }
+//       }
+//       return message.x
+//     }
+//       // function(this: any, message, index, messages) {
+//       //   if(message.departureDelay == 1){
+//       //     let consumers = this.consumers;
+//       //     let target = consumers.find(el => el.id == message.target)
 
-      //     console.log(message.target, target)
-      //     if(target){
-      //       return target.x
-      //     }
-      //   }
-      // }.bind({
-      //   width: width,
-      //   messageLayout: messageLayout,
-      //   consumers: consumers,
-      // })  
-      )  
-      .strength(1)
-      ) 
-      .force("y", d3.forceY().y((message) => {
-        if(message.departureDelay == 1){
-          let target = consumers.find(el => el.id == message.target)
-          if(target){
-            return target.y
-          }
-        }
-        return message.y
-      }
-        // function(this: any, message, index, messages){
-        // if(!message.departureDelay){
-        //   let target = this.consumers.find(element => element.id == message.target)
-        //   if(target){
-        //     return target.y
-        //   }  
-        // }
-    //     // throw "dafaq"
-    //   }.bind({
-    //     height: height,
-    //     messageLayout: messageLayout,
-    //     consumers : consumers
-    //   })  
-    )   
-      .strength(1)
-    ),  
-    messages : messages.filter((message, index, messages) => {
-      // Remove arrived messages
-      let endNode = consumers.find(element => element.id == message.target);
-      let endNodeDistance = Math.sqrt( ( message.x - endNode.x ) * (message.x - endNode.x ) + ( message.y - endNode.y ) * ( message.y - endNode.y ) );
-      if(endNodeDistance > messageRemoveDist){
-          return true
-      }
-      return false
-    })
+//       //     console.log(message.target, target)
+//       //     if(target){
+//       //       return target.x
+//       //     }
+//       //   }
+//       // }.bind({
+//       //   width: width,
+//       //   messageLayout: messageLayout,
+//       //   consumers: consumers,
+//       // })  
+//       )  
+//       .strength(0.1)
+//       ) 
+//       .force("y", d3.forceY().y((message) => {
+//         if(message.departureDelay == 1){
+//           let target = consumers.find(el => el.id == message.target)
+//           if(target){
+//             return target.y
+//           }
+//         }
+//         return message.y
+//       }
+//         // function(this: any, message, index, messages){
+//         // if(!message.departureDelay){
+//         //   let target = this.consumers.find(element => element.id == message.target)
+//         //   if(target){
+//         //     return target.y
+//         //   }  
+//         // }
+//     //     // throw "dafaq"
+//     //   }.bind({
+//     //     height: height,
+//     //     messageLayout: messageLayout,
+//     //     consumers : consumers
+//     //   })  
+//     )   
+//       .strength(0.1)
+//     ),  
+//     messages : messages.filter((message, index, messages) => {
+//       // Remove arrived messages
+//       let endNode = consumers.find(element => element.id == message.target);
+//       let endNodeDistance = Math.sqrt( ( message.x - endNode.x ) * (message.x - endNode.x ) + ( message.y - endNode.y ) * ( message.y - endNode.y ) );
+//       if(endNodeDistance > messageRemoveDist){
+//           console.log("removed ", message.id)
+//           return true
+//       }
+//       return false
+//     })
     
-});    
+// });    
 
-// const updateSourcePosition = ({ topics, messages}, { width, height, messageDepartureTickDelay}) => ({
+// const updateSourcePosition = ({ topics, messages}, { width, height, departureDelay}) => ({
 //       messages: messages.map((message)=> {
 //         if(!message.departureDelay){
 //           let source = topics.find(element => element.id == message.source)
 //           if(source){
-//             message.departureDelay = messageDepartureTickDelay
+//             message.departureDelay = departureDelay
 //             message.sourceX = source.x
 //             message.sourceY = source.y
 //           }else{
@@ -374,7 +396,9 @@ const updateTargetPosition = ({ messages, consumers, messageLayout, nodeLayout},
     
 // });    
 
-const ticked = function(this: any) {
+const nodeTicked = function(this: any) {
+  // console.log("node ticked")
+  
 
   function updateNode(node) {
       node.attr("transform", function(this: any, node) {
@@ -382,61 +406,42 @@ const ticked = function(this: any) {
       });    
   }    
   
-  function updateMessage(message) {
-    
-      // TODO: update to another function
-      message.attr("transform", function(this: any, message) {
-          // TODO: relocate departure delay behavior, but working properly, Sets initial X and Y based on attribute
-          if(message.sourceX){
-            message.x = message.sourceX;
-          }
-          if(message.sourceY){
-            message.y = message.sourceY;
-          }
-          if(message.departureDelay !== undefined){
-            // console.log(message.departureDelay)
-          }else{
-            // console.log(message.departureDelay)
-          }
-          if(message.departureDelay){
-            if(message.departureDelay == 1){ // concurrency fix?
-              // delete message.departureDelay
-              
-              if(message.sourceX){
-                delete message.sourceX;
-              }
-              if(message.sourceY){
-                delete message.sourceY
-              }
-            }else{
-              message.departureDelay = message.departureDelay - 1;
-            }
-          }
-
-          return "translate(" + fixna(message.x) + "," + fixna(message.y) + ")";
-      });    
-  }    
 
   if(this.state != undefined){
 
-    if(this.state.message){
-      this.state.message.call(updateMessage);
-      this.setState(updateSvgObjects, ()=>{
-        this.setState(updateTargetPosition)
-      })     
-    }  
+   
 
     if(this.state.topic){
-      this.state.topic.call(updateNode);
+      this.state.topic.call(updateNode );
     }  
     
     if(this.state.consumer){
       this.state.consumer.call(updateNode);
     }  
-    
+
     // if(this.state.topicLink){
-    //   this.state.topicLink.call(updateLink);
-    // }  
+    //   (() => {        
+    //       let nodes : Array<any> = [...this.state.consumers, ...this.state.topics];
+    //       this.state.topicLink
+    //       .attr("x1", (d) => {
+    //           let node = nodes.find(element => element.id == d.source )
+    //           return fixna(node.x); 
+    //         })
+    //       .attr("x2", (d) => {
+    //           let node = nodes.find(element => element.id == d.target )
+    //           return fixna(node.x); 
+    //         })
+    //       .attr("y1", (d) => {
+    //           let node = nodes.find(element => element.id == d.source )
+    //           return fixna(node.y); 
+    //         })
+    //       .attr("y2", (d) => {
+    //           let node = nodes.find(element => element.id == d.target )
+    //           return fixna(node.y); 
+    //         })
+    //   })()      
+    // }
+    
   
   
     // this.state.messagelabelLayout.alphaTarget(0.3).restart();
@@ -444,33 +449,11 @@ const ticked = function(this: any) {
     // this.state.consumerlabelLayout.alphaTarget(0.1).restart();
   
   
-    
-    if(this.state.labelMessage){
-      this.state.labelMessage.each(function(d, i) {
-        d.x = d.message.x + 10;
-        d.y = d.message.y;
-      });  
-      this.state.labelMessage.call(updateNode);
-    }  
-    
     if(this.state.labelTopic){
       this.state.labelTopic.each(function(this: any, d, i) {
               d.x = d.topic.x + 10;
               d.y = d.topic.y;
-                     
-
-          // TODO: Do something instead of the +10 above
-          // var b = this.getBBox();
-
-          // var diffX = d.x - d.node.x;
-          // var diffY = d.y - d.node.y;
-
-          // var dist = Math.sqrt(diffX * diffX + diffY * diffY);
-
-          // var shiftX = b.width * (diffX - dist) / (dist * 2);
-          // shiftX = Math.max(-b.width, Math.min(0, shiftX));
-          // var shiftY = 16;
-          // this.setAttribute("transform", "translate(" + shiftX + "," + shiftY + ")");
+      
       });        
       this.state.labelTopic.call(updateNode);
     }  
@@ -484,7 +467,88 @@ const ticked = function(this: any) {
     }  
   }  
    
+}
+
+
+const setSourceIfAvailable = (message, topics) => {
+  let source = topics.find(element => element.id == message.source)
+  if(source){ // Should always be true
+    if(source.x && source.y){ // If source is now rendered, otherwise skip
+      message.sourceX = source.x
+      message.sourceY = source.y
+
+      message.x = message.sourceX;
+      message.y = message.sourceY;
+    }
   }
+  return message
+}
+
+const messageTicked = function(this: any) {
+    console.log("message ticked")
+    
+  
+    const updateNode = (node) => {
+        node.attr("transform", (nodeItem) => {
+          return "translate(" + fixna(nodeItem.x) + "," + fixna(nodeItem.y) + ")";
+        });    
+    }    
+    
+    const updateMessage = (message, topics) => {
+      // TODO: update to another function
+      message.attr("transform", function(message){
+        // TODO: relocate departure delay behavior, but working properly, Sets initial X and Y based on attribute
+        if(message.sourceX){
+          message.x = message.sourceX;
+        }
+        if(message.sourceY){
+          message.y = message.sourceY;
+        }
+        
+        if(message.departureDelay){
+          if(message.departureDelay == 1){ // message cna now go to target            
+            if(message.sourceX){
+              delete message.sourceX;
+            }
+            if(message.sourceY){
+              delete message.sourceY
+            }
+          } else{ // Either a normal "step" OR the source was not rendered yet and might be rendered now! (still performing step!)
+            // if(message.sourceX == undefined || message.sourceY == undefined ){ // Source was not rendered while message was being rendered
+            message = setSourceIfAvailable(message, topics)
+            // }
+            message.departureDelay = message.departureDelay - 1; // Step
+          }
+        }
+        if (! (isNaN(message.x) && isNaN(message.y) ) ) {
+          return "translate(" + fixna(message.x) + "," + fixna(message.y) + ")";
+        }
+        return null
+        });    
+    }    
+  
+    if(this.state != undefined){
+  
+      if(this.state.message){
+        // TODO: pushing this.state.topics can be prettier
+        updateMessage(this.state.message, this.state.topics);
+        // TODO: Enable...?
+        // this.setState(updateSvgObjects, ()=>{
+        //   this.setState(updateTargetPosition)
+        // })     
+      }  
+
+      if(this.state.labelMessage){
+        this.state.labelMessage.each(function(d, i) {
+          d.x = d.message.x + 10;
+          d.y = d.message.y;
+        });  
+        updateNode(this.state.labelMessage);
+      }    
+    }      
+}
+  
+  
 
 
 export class KafkaD3 extends Component<GraphOps, GraphState> {
@@ -494,22 +558,15 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
       height: 1000,
       defaultScale: 0.25,
       color: d3.scaleOrdinal(d3.schemeCategory10),
-      topicLinks: [],
       endNodeRemoveDist: 30,
       messageTargetAttraction: 0.5,
       messageRepel: -5,
-      nodeCharge: -10,
-      messageDepartureTickDelay: 1000,
+      nodeCharge: -50,
+      departureDelay: 30000000000,
       messageRemoveDist: 100
   };
 
   public defaultState = {
-    // labels : {
-    //   'messages': [],
-    //   'topics' : [],
-    //   'partitions' : [],
-    //   'consumers': []
-    // },
     topics: [],
     consumers: [],
     messages: []
@@ -530,8 +587,8 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
       () => {
         this.setState(updateLayouts,
           () => {
-            this.state.messageLayout.on('tick', ticked.bind(this))
-            // this.state.nodeLayout.on('tick', ticked.bind(this))
+            this.state.messageLayout.on('tick', messageTicked.bind(this))
+            this.state.nodeLayout.on('tick', nodeTicked.bind(this))
             this.setState({
               messageLayout : this.state.messageLayout,
               nodeLayout : this.state.nodeLayout
@@ -599,127 +656,66 @@ export class KafkaD3 extends Component<GraphOps, GraphState> {
             
   // After the component did mount, we set the state each second.
   componentDidMount(this: any) {
-        console.log("didmount")
         
-        this.state.consumers.push({
-          "id": "consumer A",
-          "group": 1,
-          "size" : 10,
-        })
-        this.state.topics.push({
-          "id": "topic A",
-          "group": 1,
-          "size" : 10,
-        })
-        this.state.consumers.push({
-          "id": "consumer B",
-          "group": 1,
-          "size" : 10,
-        })
-        this.state.topics.push({
-          "id": "topic B",
-          "group": 1,
-          "size" : 10,
-        })
-        this.state.consumers.push({
-          "id": "consumer C",
-          "group": 1,
-          "size" : 10,
-        })
-        this.state.topics.push({
-          "id": "topic C",
-          "group": 1,
-          "size" : 10,
-        })
-
-        // this.setState(refreshLabels)
-        // this.state.messages.push({
-        //   "id": ("Generated " + Math.random()),
-        //   "group": 1,
-        //   "size" : 10,
-        //   "source" : "topic A",
-        //   "target" : "consumer C"
-        // })
-        // this.state.messages.push({
-        //   "id": ("Generated " + Math.random()),
-        //   "group": 1,
-        //   "size" : 10,
-        //   "source" : "topic C",
-        //   "target" : "consumer B"
-        // })
-        // this.state.messages.push({
-        //   "id": ("Generated " + Math.random()),
-        //   "group": 1,
-        //   "size" : 10,
-        //   "source" : "topic C",
-        //   "target" : "consumer A"
-        // })
-        
-        //TODO: solve ugly nesting
-        this.setState(
-          initSvgContainer,
-          () => {
-            // TODO:  callback can be nicer
-            this.refresh(
-              function(this: any){
-                
-
-
-                
-                this.state.messages.push({
-                  "id": ("Generated " + Math.random()),
-                  "group": 1,
-                  "size" : 10,
-                  "source" : "topic A",
-                  "target" : "consumer A"
-                })
-                setInterval(() => {
-                  this.state.messages.push({
-                    "id": ("Generated " + Math.random()),
-                    "group": 1,
-                    "size" : 10,
-                    "source" : "topic A",
-                    "target" : "consumer C"
-                  })
-                  this.state.messages.push({
-                    "id": ("Generated " + Math.random()),
-                    "group": 1,
-                    "size" : 10,
-                    "source" : "topic C",
-                    "target" : "consumer B"
-                  })
-                  this.state.messages.push({
-                    "id": ("Generated " + Math.random()),
-                    "group": 1,
-                    "size" : 10,
-                    "source" : "topic C",
-                    "target" : "consumer A"
-                  })
-                  this.state.messages.push({
-                    "id": ("Generated " + Math.random()),
-                    "group": 1,
-                    "size" : 10,
-                    "source" : "topic A",
-                    "target" : "consumer A"
-                  })
-
-
-                  
+        (() =>{ // init some data
+          this.state.consumers.push({
+            "id": "consumer A",
+            "group": 1,
+            "size" : 10,
+          })
+          this.state.topics.push({
+            "id": "topic A",
+            "group": 1,
+            "size" : 10,
+          })
+          this.state.consumers.push({
+            "id": "consumer B",
+            "group": 1,
+            "size" : 10,
+          })
+          this.state.topics.push({
+            "id": "topic B",
+            "group": 1,
+            "size" : 10,
+          })
+          this.state.consumers.push({
+            "id": "consumer C",
+            "group": 1,
+            "size" : 10,
+          })
+          this.state.topics.push({
+            "id": "topic C",
+            "group": 1,
+            "size" : 10,
+          })
   
-                  this.setState({
-                    messages: this.state.messages
-                  },
+          this.state.messages.push({
+            "id": ("Generated " + Math.random()),
+            "group": 1,
+            "size" : 10,
+            "source" : "topic A",
+            "target" : "consumer A"
+          })
+          this.setState({
+            messages: this.state.messages,
+            topics: this.state.topics,
+            consumers: this.state.consumers
+          }, ()=>{
+            // Now the data is initialized
+            
+            //TODO: solve ugly nesting
+            this.setState(
+              initSvgContainer, () => {
+                this.refresh(
                   () => {
-                      this.refresh(()=>{
-                        console.log('second refresh')
-                      })
-                  })              
+                    console.log("refresh")
+                  }
+                )
+              }
+            )     
 
-                }, 3000);             
-                
-            }.bind(this))
-          }
-        )     
+          })
+        })()        
   }
   // render will know everything!
   render() {
